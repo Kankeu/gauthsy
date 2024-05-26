@@ -1,0 +1,39 @@
+{
+  "form": {
+    "i_accept": "I accept",
+    "privacy_policy": "the privacy policy",
+    "email": "email",
+    "forename": "forename",
+    "surname": "surname",
+    "pwd": "password",
+    "confirm_pwd": "confirm password",
+    "age": "age",
+    "year": "year",
+    "male": "male",
+    "gender": "gender",
+    "female": "female",
+    "sign_in": "sign in",
+    "sign_up": "sign up",
+    "forgot_pwd": "forgot password?",
+    "create_account": "create account",
+    "send_verification_code": "send verification code",
+    "email_verification_sent_msg":"sent you a confirmation email. Please consult your mailbox to click on the confirmation link",
+    "resent_email_verification_msg":"if you do not receive the confirmation email within 5 minutes. Click on the button below to receive another one.",
+    "resend_email": "resend email",
+    "confirmation_link": "confirmation Link",
+    "verify": "verify",
+    "new_pwd": "new password",
+    "reset_password": "reset password"
+  },
+  "validation": {
+    "required": "This field is required.",
+    "email": "Invalid email address.",
+    "accepted": "This field must be accepted.",
+    "same": "The field must match :attribute.",
+    "max": "The field can't be more than :max.",
+    "min": "The field can't be less than :min.",
+    "maxLength": "The text must not contain more than :max characters.",
+    "minLength": "The text must not contain more than :min characters.",
+    "come_after": "The arrival point should come after the start point."
+  }
+}

@@ -1,0 +1,388 @@
+library cmlv;
+
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui';
+
+import 'package:camera/camera.dart';
+import 'package:device_info/device_info.dart';
+import 'package:firebase_ml_vision/firebase_ml_vision.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:gauthsy/views/scanner/controller_scanner.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import 'package:path_provider/path_provider.dart';
+
+export 'package:camera/camera.dart';
+
+part 'utils.dart';
+
+typedef HandleDetection<T> = Future<T> Function(FirebaseVisionImage image);
+typedef Widget ErrorWidgetBuilder(BuildContext context, CameraError error);
+
+enum CameraError {
+  unknown,
+  cantInitializeCamera,
+  androidVersionNotSupported,
+  noCameraAvailable,
+}
+
+enum _CameraState {
+  loading,
+  error,
+  ready,
+}
+
+class CameraMlVision<T> extends StatefulWidget {
+  final HandleDetection<T> detector;
+  final Future Function(File, T) onResult;
+  final WidgetBuilder loadingBuilder;
+  final ErrorWidgetBuilder errorBuilder;
+  final WidgetBuilder overlayBuilder;
+  final CameraLensDirection cameraLensDirection;
+  final Function(CameraMLController) onInitialized;
+  final ResolutionPreset resolution;
+  final ControllerScanner controllerScanner;
+  final Function onDispose;
+  final Widget Function(BuildContext, Widget) builder;
+  final ValueNotifier<bool> scan;
+
+  CameraMlVision({
+    Key key,
+    @required this.onResult,
+    @required this.detector,
+    @required this.builder,
+    @required this.controllerScanner,
+    this.loadingBuilder,
+    this.errorBuilder,
+    this.overlayBuilder,
+    this.cameraLensDirection = CameraLensDirection.back,
+    @required this.onInitialized,
+    this.resolution,
+    this.onDispose,
+    this.scan,
+  }) : super(key: key);
+
+  @override
+  CameraMlVisionState createState() => CameraMlVisionState<T>();
+}
+
+class CameraMlVisionState<T> extends State<CameraMlVision<T>>
+    with WidgetsBindingObserver {
+  String _lastImage;
+  Key _visibilityKey = UniqueKey();
+  CameraController _cameraController;
+  ImageRotation _rotation;
+  _CameraState _cameraMlVisionState = _CameraState.loading;
+  CameraError _cameraError = CameraError.unknown;
+  bool _alreadyCheckingImage = false;
+  bool _isStreaming = false;
+  bool _isDeactivate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    cameraMLController = CameraMLController(initialize: _initialize);
+    _initialize();
+    print("---------------------init---------------");
+  }
+
+  @override
+  void didUpdateWidget(CameraMlVision<T> oldWidget) {
+    if (oldWidget.resolution != widget.resolution) {
+      _initialize();
+    }
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App state changed before we got the chance to initialize.
+    if (_cameraController == null || !_cameraController.value.isInitialized) {
+      return;
+    }
+    if (state == AppLifecycleState.inactive) {
+      _cameraController?.dispose();
+    } else if (state == AppLifecycleState.resumed && _isStreaming) {
+      _initialize();
+    }
+  }
+
+  Future<void> stop() async {
+    if (_cameraController != null) {
+      if (_lastImage != null && File(_lastImage).existsSync()) {
+        await File(_lastImage).delete();
+      }
+
+      Directory tempDir = await getTemporaryDirectory();
+      _lastImage = '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}';
+      try {
+        await _cameraController.initialize();
+        _lastImage = (await _cameraController.takePicture()).path;
+      } on PlatformException catch (e) {
+        debugPrint('$e');
+      }
+
+      await _stop(false);
+    }
+  }
+
+  Future<void> _stop(bool silently) {
+    final completer = Completer();
+    scheduleMicrotask(() async {
+      if (_cameraController?.value?.isStreamingImages == true && mounted) {
+        await _cameraController.stopImageStream().catchError((_) {});
+      }
+
+      if (silently) {
+        _isStreaming = false;
+      } else {
+        setState(() {
+          _isStreaming = false;
+        });
+      }
+      completer.complete();
+    });
+    return completer.future;
+  }
+
+  void start() {
+    if (_cameraController != null) {
+      _start();
+    }
+  }
+
+  void _start() {
+    _cameraController.startImageStream(_processImage);
+    setState(() {
+      _isStreaming = true;
+    });
+  }
+
+  CameraValue get cameraValue => _cameraController?.value;
+
+  ImageRotation get imageRotation => _rotation;
+
+  Future<void> Function() get prepareForVideoRecording =>
+      _cameraController.prepareForVideoRecording;
+
+  CameraController get cameraController => _cameraController;
+  CameraMLController cameraMLController;
+
+  Future<void> _initialize({bool front = false}) async {
+    if (Platform.isAndroid) {
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      if (androidInfo.version.sdkInt < 21) {
+        debugPrint('Camera plugin doesn\'t support android under version 21');
+        if (mounted) {
+          setState(() {
+            _cameraMlVisionState = _CameraState.error;
+            _cameraError = CameraError.androidVersionNotSupported;
+          });
+        }
+        return;
+      }
+    }
+
+    CameraDescription description = await _getCamera(widget.cameraLensDirection,
+        front: cameraMLController.front);
+    if (description == null) {
+      _cameraMlVisionState = _CameraState.error;
+      _cameraError = CameraError.noCameraAvailable;
+
+      return;
+    }
+    await _cameraController?.dispose();
+    _cameraController = CameraController(
+      description,
+      widget.resolution ?? ResolutionPreset.ultraHigh,
+      enableAudio: false,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    try {
+      await _cameraController.initialize();
+    } catch (ex, stack) {
+      debugPrint('Can\'t initialize camera');
+      debugPrint('$ex, $stack');
+      if (mounted) {
+        setState(() {
+          _cameraMlVisionState = _CameraState.error;
+          _cameraError = CameraError.cantInitializeCamera;
+        });
+      }
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _cameraMlVisionState = _CameraState.ready;
+    });
+    _rotation = _rotationIntToImageRotation(
+      description.sensorOrientation,
+    );
+
+    //FIXME hacky technique to avoid having black screen on some android devices
+    await Future.delayed(Duration(milliseconds: 200));
+    start();
+    cameraMLController.setCameraController(cameraController);
+    widget.onInitialized(cameraMLController);
+  }
+
+  @override
+  void dispose() {
+    if (widget.onDispose != null) {
+      widget.onDispose();
+    }
+    if (_lastImage != null && File(_lastImage).existsSync()) {
+      File(_lastImage).delete();
+    }
+    if (_cameraController != null) {
+      _cameraController.dispose();
+    }
+    _cameraController = null;
+    print("---------------------dis---------------");
+
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cameraMlVisionState == _CameraState.loading) {
+      return widget.loadingBuilder == null
+          ? Center(child: CircularProgressIndicator())
+          : widget.loadingBuilder(context);
+    }
+    if (_cameraMlVisionState == _CameraState.error) {
+      return widget.errorBuilder == null
+          ? Center(child: Text('$_cameraMlVisionState $_cameraError'))
+          : widget.errorBuilder(context, _cameraError);
+    }
+
+    Widget cameraPreview = RepaintBoundary(
+        child: AspectRatio(
+      aspectRatio: _cameraController.value.isInitialized
+          ? _cameraController.value.aspectRatio
+          : 1,
+      child: _isStreaming
+          ? CameraPreview(
+              _cameraController,
+            )
+          : _getPicture(),
+    ));
+
+    if (widget.overlayBuilder != null) {
+      cameraPreview = Stack(
+        fit: StackFit.passthrough,
+        children: [
+          cameraPreview,
+          widget.overlayBuilder(context),
+        ],
+      );
+    }
+    return widget.builder(context, VisibilityDetector(
+      child: FittedBox(
+        alignment: Alignment.center,
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width,
+          height: MediaQuery.of(context).size.height,
+          child: cameraPreview,
+        ),
+      ),
+      onVisibilityChanged: (VisibilityInfo info) {
+        if (info.visibleFraction == 0) {
+          //invisible stop the streaming
+          _isDeactivate = true;
+          _stop(true);
+        } else if (_isDeactivate) {
+          //visible restart streaming if needed
+          _isDeactivate = false;
+          _start();
+        }
+      },
+      key: _visibilityKey,
+    ));
+  }
+
+  void _processImage(CameraImage cameraImage) async {
+    if (!_alreadyCheckingImage && mounted && widget.scan.value) {
+      _alreadyCheckingImage = true;
+      try {
+        File file = await widget.controllerScanner.toFile(cameraImage, _rotationImageRotationToInt(_rotation));
+        final T results =
+            await _detect<T>(file, widget.detector, _rotation);
+        await widget.onResult(file, results);
+      } catch (ex, stack) {
+        debugPrint('$ex, $stack');
+      }
+      _alreadyCheckingImage = false;
+    }
+  }
+
+  void toggle() {
+    if (_isStreaming && _cameraController.value.isStreamingImages) {
+      stop();
+    } else {
+      start();
+    }
+  }
+
+  Widget _getPicture() {
+    if (_lastImage != null) {
+      final file = File(_lastImage);
+      if (file.existsSync()) {
+        return Image.file(file);
+      }
+    }
+
+    return Container();
+  }
+}
+
+class CameraMLController {
+  bool front = false;
+  bool flash = false;
+  final Function({bool front}) initialize;
+
+  CameraController cameraController;
+
+  CameraMLController({@required this.initialize});
+
+  void flip() {
+    front = !front;
+    initialize(front: front);
+  }
+
+  setCameraController(CameraController cameraController) {
+    this.cameraController = cameraController;
+  }
+
+  void triggerFlash() {
+    if (cameraController != null) {
+      flash = !flash;
+      if (flash)
+        cameraController.setFlashMode(FlashMode.torch);
+      else
+        cameraController.setFlashMode(FlashMode.off);
+    }
+  }
+
+  Future<void> startVideoRecording() async{
+    cameraController.startVideoRecording();
+  }
+  Future<XFile> stopVideoRecording()async{
+    return cameraController.stopVideoRecording();
+  }
+}

@@ -1,0 +1,69 @@
+input SignUpInput{
+    surname: String!
+    forename: String!
+    email: String!
+    password: String!
+    locale: String
+}
+
+input LoginInput {
+    email: String!
+    password: String!
+}
+
+input RefreshTokenInput {
+    refresh_token: String!
+}
+
+type AuthPayload {
+    access_token: String
+    refresh_token: String
+    expires_in: Int
+    token_type: String
+    me: Me!
+}
+
+input ResentEmailVerifiedInput{
+    id: ID! @globalId(decode:"ID")
+}
+
+input VerifyEmailInput{
+    token: String!
+}
+
+input ResetPasswordInput{
+    token: String!
+    password: String!
+}
+
+input ForgotPasswordInput{
+    email: String!
+}
+
+input UpdateUserInput{
+    surname: String
+    forename: String
+    email: String
+    last_password: String
+    password: String
+    locale: String
+    fcm_token: String
+}
+
+type MercureToken{
+    mercure_token: String!
+    expires_in: Int!
+}
+
+type Mutation {
+    signUp(data: SignUpInput!): Me @field(resolver: "App\\GraphQL\\Mutations\\Auth\\SignUp")
+    login(data: LoginInput!): AuthPayload @field(resolver: "App\\GraphQL\\Mutations\\Auth\\Login")
+    resentEmailVerified(data: ResentEmailVerifiedInput!): Boolean! @field(resolver: "App\\GraphQL\\Mutations\\Auth\\ResentEmailVerified")
+    verifyEmail(data: VerifyEmailInput!): Boolean! @field(resolver: "App\\GraphQL\\Mutations\\Auth\\VerifyEmail")
+    forgotPassword(data: ForgotPasswordInput!): Boolean! @field(resolver: "App\\GraphQL\\Mutations\\Auth\\ForgotPassword")
+    resetPassword(data: ResetPasswordInput!): Boolean! @field(resolver: "App\\GraphQL\\Mutations\\Auth\\ResetPassword")
+    refreshToken(data: RefreshTokenInput!): AuthPayload @field(resolver: "App\\GraphQL\\Mutations\\Auth\\RefreshToken") @guard
+    updateUser(data: UpdateUserInput!): Me @field(resolver: "App\\GraphQL\\Mutations\\Auth\\UpdateUser") @guard
+    logout: Boolean @field(resolver: "App\\GraphQL\\Mutations\\Auth\\Logout") @guard
+    revokeAllTokens: Boolean @field(resolver: "App\\GraphQL\\Mutations\\Auth\\RevokeAllTokens") @guard
+}

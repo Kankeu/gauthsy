@@ -1,0 +1,16 @@
+type Notification{
+    id: String!
+    type: String!
+    data: String! @json
+    read_at: DateTimeTz
+    created_at: DateTimeTz!
+}
+
+input DeleteNotificationInput{
+    id: String!
+}
+
+extend type Mutation @guard {
+    markAllNotificationsAsRead: Boolean! @field(resolver: "Notification\\MarkAllNotificationsAsRead")
+    deleteNotification(data: DeleteNotificationInput!): Boolean! @field(resolver: "Notification\\DeleteNotification")
+}

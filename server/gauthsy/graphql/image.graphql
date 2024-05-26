@@ -1,0 +1,24 @@
+input UpdateImageInput{
+    id: ID @globalId(decode: "ID")
+    file: Upload
+}
+
+input CreateImageInput{
+    type: ImageType!
+    file: Upload!
+}
+
+enum ImageType {
+    FRONT @enum(value: "front")
+    BACK @enum(value: "back")
+    FRONT_FACE @enum(value: "front_face")
+    FACE @enum(value: "face")
+}
+
+type Image{
+    id: ID @globalId
+    type: ImageType!
+    path: String!
+    full_path: String!
+    resized: Boolean!
+}

@@ -1,0 +1,142 @@
+type Document{
+    id: ID! @globalId
+    type: DocumentType!
+    number: String!
+    issued_by: DocumentIssuedBy!
+    payload: DocumentMRZ!
+    valid: Boolean!
+    message: String
+    verified_at: DateTimeTz
+    images(where:_ @whereConditions(columns: ["type"])): [Image!] @morphMany(type: "paginator", defaultCount:10, maxCount:10)
+    created_at: DateTimeTz!
+    updated_at: DateTimeTz!
+}
+
+enum DocumentType {
+    AR @enum(value: "ar")
+    ID @enum(value: "id")
+}
+
+enum DocumentIssuedBy {
+    CM @enum(value: "cm")
+    DE @enum(value: "de")
+    RW @enum(value: "rw")
+}
+
+enum MRZCountryCode {
+    CMR @enum(value: "cmr")
+    D @enum(value: "d")
+    RWA @enum(value: "rwa")
+}
+
+enum Sex {
+    M @enum(value: "m")
+    F @enum(value: "f")
+}
+
+enum MRZNationalityCountryCode {
+    CMR @enum(value: "cmr")
+    RWA @enum(value: "rwa")
+    DEU @enum(value: "deu")
+}
+
+type DocumentMRZ{
+    surname: String!
+    forename: String!
+    country_code: MRZCountryCode!
+    document_type: DocumentType!
+    document_number: String!
+    nationality_country_code: MRZNationalityCountryCode
+    sex: Sex!
+    birth_date: Date!
+    expiry_date: Date!
+    personal_number: String
+    personal_number2: String
+}
+
+input CreateDocumentInput{
+    type: DocumentType!
+    number: String!
+    issued_by: DocumentIssuedBy!
+    payload: CreateDocumentMRZInput!
+    images: [CreateImageInput!]!
+}
+
+
+
+input CreateDocumentMRZInput{
+    surname: String!
+    forename: String!
+    country_code: MRZCountryCode!
+    document_type: DocumentType!
+    document_number: String!
+    nationality_country_code: MRZNationalityCountryCode
+    sex: Sex!
+    birth_date: Date!
+    expiry_date: Date!
+    personal_number: String
+    personal_number2: String
+}
+
+
+input UpdateDocumentInput{
+    id: ID! @globalId(decode:"ID")
+    type: DocumentType
+    number: String
+    issued_by: DocumentIssuedBy
+    payload: UpdateDocumentMRZInput
+    images: [CreateImageInput!]
+}
+
+input UpdateDocumentMRZInput{
+    surname: String
+    forename: String
+    country_code: MRZCountryCode
+    document_type: DocumentType
+    document_number: String
+    nationality_country_code: MRZNationalityCountryCode
+    sex: Sex
+    birth_date: Date
+    expiry_date: Date
+    personal_number: String
+    personal_number2: String
+}
+
+input DeleteDocumentInput{
+    id: ID! @globalId(decode:"ID")
+}
+
+input RejectDocumentInput{
+    id: ID! @globalId(decode:"ID")
+    reason: String!
+}
+
+input ValidateDocumentInput{
+    id: ID! @globalId(decode:"ID")
+}
+
+input GenerateTokenToDocumentsInput{
+    host: String!
+    documents: [GenerateTokenToDocumentInput!]!
+}
+
+input GenerateTokenToDocumentInput{
+    id: ID! @globalId(decode:"ID")
+}
+
+input TokenInput{
+    token: String!
+}
+
+extend type Query {
+    documents(data: TokenInput, where:_ @whereConditions(columns: ["type","valid","number","issued_by","verified_at"]), orderBy: _ @orderBy(columns: ["verified_at", "created_at"])): [Document!] @paginate(type: "paginator", scopes: ["byToken"], defaultCount:10, maxCount:30)
+}
+
+extend type Mutation @guard{
+    createDocument(data: CreateDocumentInput!): Document! @field(resolver: "Document\\CreateDocument")
+    updateDocument(data: UpdateDocumentInput!): Document! @field(resolver: "Document\\UpdateDocument")
+    deleteDocument(data: DeleteDocumentInput!): Boolean! @field(resolver: "Document\\DeleteDocument")
+    rejectDocument(data: RejectDocumentInput!): Boolean! @field(resolver: "Document\\RejectDocument")
+    validateDocument(data: ValidateDocumentInput!): Boolean! @field(resolver: "Document\\ValidateDocument")
+    generateTokenToDocuments(data: GenerateTokenToDocumentsInput!): String! @field(resolver: "Document\\GenerateTokenToDocuments")
+}

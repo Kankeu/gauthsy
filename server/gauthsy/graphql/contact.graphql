@@ -1,0 +1,9 @@
+input CreateContactInput{
+    full_name: String!
+    email: String!
+    message: String!
+}
+
+extend type Mutation{
+    createContact(data: CreateContactInput!): Boolean! @field(resolver: "Contact\\CreateContact")
+}

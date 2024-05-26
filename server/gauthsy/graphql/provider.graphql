@@ -1,0 +1,45 @@
+interface ProviderInterface{
+    id: ID!
+    surname: String!
+    forename: String!
+    created_at: DateTimeTz!
+    updated_at: DateTimeTz!
+    email: String!
+    locale: String!
+}
+
+type Provider implements ProviderInterface @model(class:"User")   {
+    id: ID! @globalId
+    surname: String!
+    forename: String!
+    created_at: DateTimeTz!
+    updated_at: DateTimeTz!
+    email: String!
+    locale: String!
+}
+
+type Me implements ProviderInterface{
+    id: ID! @globalId
+    surname: String!
+    forename: String!
+    email: String!
+    locale: String!
+    fcm_token: String
+    email_verified_at: DateTimeTz
+    created_at: DateTimeTz!
+    updated_at: DateTimeTz!
+    is_admin: Boolean!
+    unread_notifications_count: Int!
+    documents: [Document!] @morphMany(type: "paginator", defaultCount:10, maxCount:10)
+}
+type AppVersion{
+    version: String!
+    message: String!
+    must_upgrade: Boolean!
+    published_at: DateTimeTz!
+}
+type Query {
+    me: Me @auth @guard
+    appVersion: AppVersion  @field(resolver: "AppVersion\\AppVersion")
+    provider(id: ID! @globalId(decode: "ID") @eq): Provider  @find
+}
